@@ -16,6 +16,7 @@
 #include <sys/eventfd.h>
 #include <sys/resource.h>
 #include <sys/epoll.h>
+#include <fnmatch.h>
 
 #include "uftrace.h"
 #include "libmcount/mcount.h"
@@ -23,6 +24,7 @@
 #include "utils/symbol.h"
 #include "utils/list.h"
 #include "utils/filter.h"
+#include "utils/perf.h"
 
 #define SHMEM_NAME_SIZE (64 - (int)sizeof(struct list_head))
 
@@ -50,6 +52,8 @@ static pthread_mutex_t free_list_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t write_list_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool buf_done;
 static int thread_ctl[2];
+
+static bool use_perf;
 
 
 static bool can_use_fast_libmcount(struct opts *opts)
@@ -293,6 +297,9 @@ static uint64_t calc_feat_mask(struct opts *opts)
 	if (opts->event)
 		features |= EVENT;
 
+	if (use_perf)
+		features |= PERF_EVENT;
+
 	return features;
 }
 
@@ -430,6 +437,7 @@ struct writer_arg {
 	int			sock;
 	int			idx;
 	int			tid;
+	struct uftrace_perf_info upi;
 	int			nr_cpu;
 	int			cpus[];
 };
@@ -469,7 +477,8 @@ void *writer_thread(void *arg)
 	struct buf_list *buf, *pos;
 	struct writer_arg *warg = arg;
 	struct opts *opts = warg->opts;
-	struct pollfd pollfd[warg->nr_cpu + 1];
+	struct pollfd pollfd[warg->nr_cpu + 2];
+	int nr_poll = 1;
 	int i, dummy;
 
 	if (opts->rt_prio) {
@@ -484,9 +493,20 @@ void *writer_thread(void *arg)
 	pollfd[0].fd = thread_ctl[0];
 	pollfd[0].events = POLLIN;
 
-	for (i = 0; i < warg->nr_cpu; i++) {
-		pollfd[i + 1].fd = warg->kern->traces[warg->cpus[i]];
-		pollfd[i + 1].events = POLLIN;
+	if (use_perf) {
+		for (i = 0; i < warg->nr_cpu; i++) {
+			pollfd[i + nr_poll].fd = warg->upi.event_fd[i];
+			pollfd[i + nr_poll].events = POLLIN;
+		}
+		nr_poll += warg->nr_cpu;
+	}
+
+	if (opts->kernel) {
+		for (i = 0; i < warg->nr_cpu; i++) {
+			pollfd[i + nr_poll].fd = warg->kern->traces[warg->cpus[i]];
+			pollfd[i + nr_poll].events = POLLIN;
+		}
+		nr_poll += warg->nr_cpu;
 	}
 
 	pr_dbg2("start writer thread %d\n", warg->idx);
@@ -494,17 +514,19 @@ void *writer_thread(void *arg)
 		LIST_HEAD(head);
 		bool check_list = false;
 
-		if (poll(pollfd, warg->nr_cpu + 1, 1000) < 0)
+		if (poll(pollfd, nr_poll, 1000) < 0)
 			goto out;
 
-		for (i = 0; i < warg->nr_cpu + 1; i++) {
+		for (i = 0; i < nr_poll; i++) {
 			if (pollfd[i].revents & POLLIN) {
 				if (i == 0)
 					check_list = true;
-				else
+				else if (use_perf && i < (warg->nr_cpu + 1))
+					record_perf_data(&warg->upi, i - 1);
+				else if (opts->kernel)
 					record_kernel_trace_pipe(warg->kern,
-								 warg->cpus[i-1],
-								 warg->sock);
+						warg->cpus[i - (nr_poll - warg->nr_cpu)],
+						warg->sock);
 			}
 		}
 
@@ -555,10 +577,11 @@ void *writer_thread(void *arg)
 			if (!opts->kernel)
 				continue;
 
-			poll(&pollfd[1], warg->nr_cpu, 0);
+			poll(&pollfd[nr_poll - warg->nr_cpu], warg->nr_cpu, 0);
 
 			for (i = 0; i < warg->nr_cpu; i++) {
-				if (pollfd[i+1].revents & POLLIN) {
+				int cpu = i + nr_poll - warg->nr_cpu;
+				if (pollfd[cpu].revents & POLLIN) {
 					record_kernel_trace_pipe(warg->kern,
 								 warg->cpus[i],
 								 warg->sock);
@@ -569,6 +592,12 @@ void *writer_thread(void *arg)
 	pr_dbg2("stop writer thread %d\n", warg->idx);
 
 out:
+	if (use_perf) {
+		for (i = 0; i < warg->nr_cpu; i++)
+			record_perf_data(&warg->upi, i);
+	}
+
+	finish_perf_record(&warg->upi);
 	free(warg);
 	return NULL;
 }
@@ -1337,6 +1366,29 @@ static void check_binary(struct opts *opts)
 	close(fd);
 }
 
+static bool check_perf_event(char *events)
+{
+	char *str, *tmp, *evt;
+	bool found = false;
+
+	if (events == NULL)
+		return false;
+
+	str = tmp = xstrdup(events);
+
+	evt = strtok(tmp, ";");
+	while (evt) {
+		if (fnmatch(evt, "linux:schedule", 0) == 0) {
+			found = true;
+			break;
+		}
+		evt = strtok(NULL, ";");
+	}
+
+	free(str);
+	return found;
+}
+
 int command_record(int argc, char *argv[], struct opts *opts)
 {
 	int pid;
@@ -1368,6 +1420,8 @@ int command_record(int argc, char *argv[], struct opts *opts)
 		return -1;
 
 	check_binary(opts);
+
+	use_perf = check_perf_event(opts->event);
 
 	fflush(stdout);
 
@@ -1463,7 +1517,7 @@ int command_record(int argc, char *argv[], struct opts *opts)
 		int cpu_per_thread = DIV_ROUND_UP(nr_cpu, opts->nr_thread);
 		size_t sizeof_warg = sizeof(*warg) + sizeof(int) * cpu_per_thread;
 
-		warg = xmalloc(sizeof_warg);
+		warg = xzalloc(sizeof_warg);
 		warg->opts = opts;
 		warg->idx  = i;
 		warg->sock = sock;
@@ -1472,7 +1526,7 @@ int command_record(int argc, char *argv[], struct opts *opts)
 		INIT_LIST_HEAD(&warg->list);
 		INIT_LIST_HEAD(&warg->bufs);
 
-		if (opts->kernel) {
+		if (opts->kernel || use_perf) {
 			warg->nr_cpu = cpu_per_thread;
 
 			for (k = 0; k < cpu_per_thread; k++) {
@@ -1481,6 +1535,13 @@ int command_record(int argc, char *argv[], struct opts *opts)
 				else
 					warg->cpus[k] = -1;
 			}
+		}
+
+		if (use_perf) {
+			if (setup_perf_record(&warg->upi, cpu_per_thread,
+					      warg->cpus, pid,
+					      opts->dirname) < 0)
+				use_perf = false;
 		}
 
 		pthread_create(&writers[i], NULL, writer_thread, warg);
