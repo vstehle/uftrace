@@ -10,6 +10,7 @@
 #include "utils/rbtree.h"
 #include "utils/list.h"
 #include "utils/symbol.h"
+#include "utils/perf.h"
 
 
 #define UFTRACE_MAGIC_LEN  8
@@ -158,6 +159,7 @@ struct uftrace_perf {
 	FILE			*fp;
 	bool			valid;
 	bool			done;
+	struct uftrace_ctxsw	ctxsw;
 };
 
 struct ftrace_file_handle {
