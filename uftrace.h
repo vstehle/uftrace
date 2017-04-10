@@ -462,4 +462,6 @@ void clear_ftrace_info(struct ftrace_info *info);
 int arch_fill_cpuinfo_model(int fd);
 int arch_register_index(char *reg_name);
 
+#define EVENT_ID_USER  1000000U
+
 #endif /* __UFTRACE_H__ */
