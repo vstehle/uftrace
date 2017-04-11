@@ -977,6 +977,7 @@ static void mcount_startup(void)
 	char *retval_str;
 	char *plthook_str;
 	char *patch_str;
+	char *event_str;
 	char *dirname;
 	struct stat statbuf;
 	LIST_HEAD(modules);
@@ -1006,6 +1007,7 @@ static void mcount_startup(void)
 	retval_str = getenv("UFTRACE_RETVAL");
 	plthook_str = getenv("UFTRACE_PLTHOOK");
 	patch_str = getenv("UFTRACE_PATCH");
+	event_str = getenv("UFTRACE_EVENT");
 
 	if (logfd_str) {
 		int fd = strtol(logfd_str, NULL, 0);
@@ -1090,6 +1092,9 @@ static void mcount_startup(void)
 
 	if (patch_str)
 		mcount_dynamic_update(&symtabs, patch_str);
+
+	if (event_str)
+		mcount_setup_events(dirname, event_str);
 
 	if (plthook_str) {
 		if (symtabs.dsymtab.nr_sym == 0) {
