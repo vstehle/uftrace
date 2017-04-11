@@ -48,6 +48,7 @@ enum ftrace_feat_bits {
 	RETVAL_BIT,
 	SYM_REL_ADDR_BIT,
 	MAX_STACK_BIT,
+	EVENT_BIT,
 
 	/* bit mask */
 	PLTHOOK			= (1U << PLTHOOK_BIT),
@@ -57,6 +58,7 @@ enum ftrace_feat_bits {
 	RETVAL			= (1U << RETVAL_BIT),
 	SYM_REL_ADDR		= (1U << SYM_REL_ADDR_BIT),
 	MAX_STACK		= (1U << MAX_STACK_BIT),
+	EVENT			= (1U << EVENT_BIT),
 };
 
 enum ftrace_info_bits {
@@ -155,6 +157,7 @@ struct opts {
 	char *diff;
 	char *fields;
 	char *patch;
+	char *event;
 	int mode;
 	int idx;
 	int depth;
