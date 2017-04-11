@@ -125,6 +125,7 @@ struct ftrace_file_handle {
 	bool needs_bit_swap;
 	uint64_t time_filter;
 	struct uftrace_time_range time_range;
+	struct list_head events;
 };
 
 #define UFTRACE_MODE_INVALID 0
@@ -463,5 +464,12 @@ int arch_fill_cpuinfo_model(int fd);
 int arch_register_index(char *reg_name);
 
 #define EVENT_ID_USER  1000000U
+
+struct uftrace_event {
+	struct list_head list;
+	unsigned id;
+	char *provider;
+	char *event;
+};
 
 #endif /* __UFTRACE_H__ */

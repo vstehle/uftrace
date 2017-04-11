@@ -193,6 +193,59 @@ int read_task_txt_file(char *dirname, bool needs_session, bool sym_rel_addr)
 	return 0;
 }
 
+/**
+ * read_events_file - read 'events.txt' file from data directory
+ * @dirname: name of the data directory
+ *
+ * This function read the events file in the @dirname and build event
+ * information (for userspace).
+ *
+ * It returns 0 for success, -1 for error.
+ */
+int read_events_file(struct ftrace_file_handle *handle)
+{
+	FILE *fp;
+	char *fname = NULL;
+	char *line = NULL;
+	size_t sz = 0;
+
+	xasprintf(&fname, "%s/%s", handle->dirname, "events.txt");
+
+	fp = fopen(fname, "r");
+	if (fp == NULL) {
+		/* it might hit no events, so no file is ok */
+		if (errno == ENOENT)
+			errno = 0;
+
+		free(fname);
+		return -errno;
+	}
+
+	pr_dbg("reading %s file\n", fname);
+	while (getline(&line, &sz, fp) >= 0) {
+		char provider[512];
+		char event[512];
+		unsigned evt_id;
+		struct uftrace_event *ev;
+
+		if (!strncmp(line, "EVENT", 5)) {
+			sscanf(line + 7, "%u %[^:]:%s",
+			       &evt_id, provider, event);
+
+			ev = xmalloc(sizeof(*ev));
+			ev->id = evt_id;
+			ev->provider = xstrdup(provider);
+			ev->event = xstrdup(event);
+
+			list_add_tail(&ev->list, &handle->events);
+		}
+	}
+
+	fclose(fp);
+	free(fname);
+	return 0;
+}
+
 static void snprint_timestamp(char *buf, size_t sz, uint64_t timestamp)
 {
 	snprintf(buf, sz, "%"PRIu64".%09"PRIu64,  // sec.nsec
@@ -353,6 +406,7 @@ retry:
 	handle->tasks = NULL;
 	handle->time_filter = opts->threshold;
 	handle->time_range = opts->range;
+	INIT_LIST_HEAD(&handle->events);
 
 	if (fread(&handle->hdr, sizeof(handle->hdr), 1, fp) != 1)
 		pr_err("cannot read header data");
@@ -391,6 +445,9 @@ retry:
 
 	if (!(handle->hdr.feat_mask & MAX_STACK))
 		handle->hdr.max_stack = MCOUNT_RSTACK_MAX;
+
+	if (handle->hdr.feat_mask & EVENT)
+		read_events_file(handle);
 
 	ret = 0;
 
