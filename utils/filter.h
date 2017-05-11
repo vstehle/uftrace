@@ -44,10 +44,14 @@ enum ftrace_arg_format {
 	ARG_FMT_FLOAT,
 };
 
-#define ARG_TYPE_INDEX  0
-#define ARG_TYPE_FLOAT  1
-#define ARG_TYPE_REG    2
-#define ARG_TYPE_STACK  3
+enum uftrace_arg_type {
+	ARG_TYPE_INDEX,
+	ARG_TYPE_FLOAT,
+	ARG_TYPE_REG,
+	ARG_TYPE_STACK,
+	ARG_TYPE_DEREF_REG,
+	ARG_TYPE_DEREF_ADDR,
+};
 
 /* should match with ftrace_arg_format above */
 #define ARG_SPEC_CHARS  "diuxscf"
@@ -72,7 +76,9 @@ struct ftrace_arg_spec {
 	union {
 		short		reg_idx;
 		short		stack_ofs;
+		short		deref_ofs;
 	};
+	unsigned long		deref_base;
 };
 
 struct ftrace_trigger {
