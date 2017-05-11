@@ -12,6 +12,7 @@
 #include "utils/utils.h"
 #include "utils/fstack.h"
 #include "utils/symbol.h"
+#include "utils/filter.h"
 #include "libmcount/mcount.h"
 
 
@@ -195,6 +196,28 @@ int read_task_txt_file(struct uftrace_session_link *sess, char *dirname,
 	return 0;
 }
 
+static void read_event_arguments(struct uftrace_event *event, char *argstr)
+{
+	struct ftrace_arg_spec *spec;
+	char *pos;
+
+	INIT_LIST_HEAD(&event->args);
+
+	while ((pos = strsep(&argstr, " ")) != NULL) {
+		int idx, size;
+
+		sscanf(pos, "arg%d/d%d", &idx, &size);
+
+		spec = xmalloc(sizeof(*spec));
+		spec->type = ARG_TYPE_INDEX;
+		spec->fmt  = ARG_FMT_AUTO;
+		spec->size = size / 8;
+		spec->idx  = idx;
+
+		list_add(&spec->list, &event->args);
+	}
+}
+
 /**
  * read_events_file - read 'events.txt' file from data directory
  * @dirname: name of the data directory
@@ -238,6 +261,9 @@ int read_events_file(struct ftrace_file_handle *handle)
 			ev->id = evt_id;
 			ev->provider = xstrdup(provider);
 			ev->event = xstrdup(event);
+
+			read_event_arguments(ev, line + 7 + 10 +
+					     strlen(provider) + strlen(event));
 
 			list_add_tail(&ev->list, &handle->events);
 		}
