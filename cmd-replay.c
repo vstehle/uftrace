@@ -790,6 +790,11 @@ lost:
 
 		pr_out(" %*s/* ", depth * 2, "");
 		print_event(task, rstack);
+		if (rstack->more) {
+			str_mode = HAS_MORE | NEEDS_PAREN;
+			get_argspec_string(task, args, sizeof(args), str_mode);
+			pr_out(" %s", args);
+		}
 		pr_out(" */\n");
 	}
 out:
