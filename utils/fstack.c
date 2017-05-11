@@ -983,6 +983,36 @@ int read_task_args(struct ftrace_task_handle *task,
 	return 0;
 }
 
+int read_event_args(struct ftrace_task_handle *task,
+		    struct uftrace_record *urec)
+{
+	unsigned evt_id = urec->addr;
+	struct uftrace_event *event;
+	struct ftrace_arg_spec *arg;
+	int rem;
+
+	list_for_each_entry(event, &task->h->events, list) {
+		if (event->id == evt_id)
+			break;
+	}
+	if (list_no_entry(event, &task->h->events, list))
+		return 0;
+
+	task->args.len = 0;
+	task->args.args = &event->args;
+
+	list_for_each_entry(arg, &event->args, list) {
+		if (read_task_arg(task, arg) < 0)
+			return -1;
+	}
+
+	rem = task->args.len % 8;
+	if (rem)
+		fseek(task->fp, 8 - rem, SEEK_CUR);
+
+	return 0;
+}
+
 /**
  * read_task_ustack - read user function record for @task
  * @handle: file handle
@@ -1011,14 +1041,16 @@ int read_task_ustack(struct ftrace_file_handle *handle,
 	}
 
 	if (task->ustack.more) {
-		if (!(handle->hdr.feat_mask & (ARGUMENT | RETVAL)) ||
-		    handle->info.argspec == NULL)
+		if (!(handle->hdr.feat_mask & (ARGUMENT | RETVAL | EVENT)) ||
+		    (handle->info.argspec == NULL && list_empty(&handle->events)))
 			pr_err_ns("invalid data (more bit set w/o args)");
 
 		if (task->ustack.type == UFTRACE_ENTRY)
 			read_task_args(task, &task->ustack, false);
 		else if (task->ustack.type == UFTRACE_EXIT)
 			read_task_args(task, &task->ustack, true);
+		else if (task->ustack.type == UFTRACE_EVENT)
+			read_event_args(task, &task->ustack);
 		else
 			abort();
 	}

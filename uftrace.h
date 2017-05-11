@@ -502,6 +502,7 @@ int arch_register_index(char *reg_name);
 
 struct uftrace_event {
 	struct list_head list;
+	struct list_head args;
 	unsigned id;
 	char *provider;
 	char *event;
