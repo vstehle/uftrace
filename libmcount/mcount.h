@@ -113,12 +113,17 @@ struct mcount_shmem {
 /* first 4 byte saves the actual size of the argbuf */
 #define ARGBUF_SIZE  1024
 
-struct mcount_event {
-	unsigned	id;
-	uint64_t	time;
-};
-
 #define MAX_EVENT  4
+
+#define EVENT_FL_ARGUMENT  1
+
+struct mcount_event {
+	uint64_t	time;
+	unsigned	id;
+	unsigned short	flags;
+	unsigned short	arglen;
+	char		argbuf[ARGBUF_SIZE];
+};
 
 /*
  * The idx and record_idx are to save current index of the rstack.
@@ -270,13 +275,18 @@ struct mcount_event_info {
 	unsigned id;
 	unsigned long addr;
 	struct list_head list;
+	struct list_head args;
 };
 
 int mcount_setup_events(char *dirname, char *event_str);
 struct mcount_event_info * mcount_lookup_event(unsigned long addr);
-int mcount_save_event(struct mcount_event_info *mei);
+int mcount_save_event(struct mcount_event_info *mei, void *priv);
 void mcount_finish_events(void);
 
 int mcount_arch_enable_event(struct mcount_event_info *mei);
+int mcount_arch_parse_sdt_argument(struct ftrace_arg_spec *spec,
+				   char *arg_str);
+void mcount_arch_save_event_arg(struct mcount_event_info *mei,
+				struct mcount_event *ev, void *priv);
 
 #endif /* FTRACE_MCOUNT_H */

@@ -15,6 +15,7 @@
 #include "utils/utils.h"
 #include "utils/list.h"
 #include "utils/compiler.h"
+#include "utils/filter.h"
 
 #define SDT_SECT  ".note.stapsdt"
 #define SDT_NAME  "stapsdt"
@@ -39,6 +40,51 @@ static unsigned event_id = EVENT_ID_USER;
 __weak int mcount_arch_enable_event(struct mcount_event_info *mei)
 {
 	return 0;
+}
+
+__weak int mcount_arch_parse_sdt_argument(struct ftrace_arg_spec *spec,
+					  char *arg_str)
+{
+	spec->type = ARG_TYPE_INDEX;
+	spec->idx  = 1;
+
+	return 0;
+}
+
+static void parse_sdt_arguments(struct mcount_event_info *mei)
+{
+	char *str, *pos, *tmp;
+	struct ftrace_arg_spec *spec;
+
+	INIT_LIST_HEAD(&mei->args);
+	str = tmp = xstrdup(mei->arguments);
+
+	while ((pos = strsep(&tmp, " ")) != NULL) {
+		spec = xmalloc(sizeof(*spec));
+
+		spec->size      = sizeof(long);
+		spec->fmt       = ARG_FMT_AUTO;
+		spec->deref_ofs = 0;
+
+		if (strchr(pos, '@')) {
+			int sz;
+
+			sz = strtol(pos, &pos, 10);
+			if (*pos == '@')
+				pos++;
+
+			spec->size = abs(sz);
+		}
+
+		if (mcount_arch_parse_sdt_argument(spec, pos) < 0) {
+			free(spec);
+			continue;
+		}
+
+		list_add(&spec->list, &mei->args);
+	}
+
+	free(str);
 }
 
 static int search_sdt_event(struct dl_phdr_info *info, size_t sz, void *data)
@@ -143,6 +189,8 @@ static int search_sdt_event(struct dl_phdr_info *info, size_t sz, void *data)
 		mei->event     = xstrdup(event);
 		mei->arguments = xstrdup(args);
 
+		parse_sdt_arguments(mei);
+
 		pr_dbg("adding SDT event (%s:%s) from %s at %#lx\n",
 		       mei->provider, mei->event, mei->module, mei->addr);
 
@@ -219,8 +267,19 @@ int mcount_setup_events(char *dirname, char *event_str)
 		pr_err("cannot open file: %s\n", filename);
 
 	list_for_each_entry(mei, &events, list) {
-		fprintf(fp, "EVENT: %u %s:%s\n",
+		fprintf(fp, "EVENT: %u %s:%s",
 			mei->id, mei->provider, mei->event);
+
+		if (!list_empty(&mei->args)) {
+			struct ftrace_arg_spec *spec;
+			int idx = 1;
+
+			list_for_each_entry(spec, &mei->args, list) {
+				fprintf(fp, " arg%d/d%d", idx++,
+					spec->size * 8);
+			}
+		}
+		fputc('\n', fp);
 	}
 
 	fclose(fp);

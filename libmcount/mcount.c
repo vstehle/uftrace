@@ -793,7 +793,12 @@ out:
 	mtdp->recursion_guard = false;
 }
 
-int mcount_save_event(struct mcount_event_info *mei)
+__weak void mcount_arch_save_event_arg(struct mcount_event_info *mei,
+				       struct mcount_event *ev, void *priv)
+{
+}
+
+int mcount_save_event(struct mcount_event_info *mei, void *priv)
 {
 	struct mcount_thread_data *mtdp;
 
@@ -807,8 +812,12 @@ int mcount_save_event(struct mcount_event_info *mei)
 	if (mtdp->nr_events < MAX_EVENT) {
 		int i = mtdp->nr_events++;
 
-		mtdp->event[i].id   = mei->id;
-		mtdp->event[i].time = mcount_gettime();
+		mtdp->event[i].id    = mei->id;
+		mtdp->event[i].flags = 0;
+		mtdp->event[i].time  = mcount_gettime();
+
+		if (!list_empty(&mei->args))
+			mcount_arch_save_event_arg(mei, &mtdp->event[i], priv);
 	}
 
 	return 0;
