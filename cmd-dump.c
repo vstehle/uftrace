@@ -375,7 +375,7 @@ static void get_feature_string(char *buf, size_t sz, uint64_t feature_mask)
 	bool first = true;
 	const char *feat_str[] = { "PLTHOOK", "TASK_SESSION", "KERNEL",
 				   "ARGUMENT", "RETVAL", "SYM_REL_ADDR",
-				   "MAX_STACK" };
+				   "MAX_STACK", "EVENT" };
 
 	for (i = 0; i < FEAT_BIT_MAX; i++) {
 		if (!((1U << i) & feature_mask))
@@ -452,11 +452,31 @@ static void print_raw_task_rstack(struct uftrace_dump_ops *ops,
 	struct uftrace_record *frs = task->rstack;
 	struct uftrace_raw_dump *raw = container_of(ops, typeof(*raw), ops);
 
+	if (frs->type == UFTRACE_EVENT) {
+		struct uftrace_event *evt;
+
+		list_for_each_entry(evt, &task->h->events, list) {
+			if (evt->id == frs->addr) {
+				size_t len = 0;
+
+				len += strlen(evt->provider) + 1;
+				len += strlen(evt->event) + 1;
+
+				name = xmalloc(len);
+				snprintf(name, len, "%s:%s",
+					 evt->provider, evt->event);
+			}
+		}
+	}
+
 	pr_time(frs->time);
 	pr_out("%5d: [%s] %s(%"PRIx64") depth: %u\n",
 	       task->tid, rstack_type(frs),
 	       name, frs->addr, frs->depth);
 	pr_hex(&raw->file_offset, frs, sizeof(*frs));
+
+	if (frs->type == UFTRACE_EVENT && strchr(name, ':'))
+		free(name);
 
 	if (frs->more) {
 		if (frs->type == UFTRACE_ENTRY) {
@@ -468,9 +488,16 @@ static void print_raw_task_rstack(struct uftrace_dump_ops *ops,
 		}
 		else if (frs->type == UFTRACE_EXIT) {
 			pr_time(frs->time);
-			pr_out("%5d: [%s] length = %d\n", task->tid, "retval",
+			pr_out("%5d: [%s] length = %d\n", task->tid, " ret ",
 			       task->args.len);
 			pr_retval(&task->args);
+			pr_hex(&raw->file_offset, task->args.data, task->args.len);
+		}
+		else if (frs->type == UFTRACE_EVENT) {
+			pr_time(frs->time);
+			pr_out("%5d: [%s] length = %d\n", task->tid, "args ",
+			       task->args.len);
+			pr_args(&task->args);
 			pr_hex(&raw->file_offset, task->args.data, task->args.len);
 		}
 		else
@@ -602,6 +629,9 @@ static void print_chrome_task_rstack(struct uftrace_dump_ops *ops,
 	struct uftrace_record *frs = task->rstack;
 	enum argspec_string_bits str_mode = NEEDS_ESCAPE | NEEDS_PAREN;
 	struct uftrace_chrome_dump *chrome = container_of(ops, typeof(*chrome), ops);
+
+	if (frs->type == UFTRACE_EVENT)
+		return;
 
 	if (chrome->last_comma)
 		pr_out(",\n");
@@ -892,6 +922,8 @@ static void print_flame_task_rstack(struct uftrace_dump_ops *ops,
 		node = add_fg_node(node, name);
 	else if (frs->type == UFTRACE_EXIT)
 		node = add_fg_time(node, task, flame->sample_time);
+	else if (frs->type == UFTRACE_EVENT)
+		return;
 	else
 		node = &fg_root;
 
