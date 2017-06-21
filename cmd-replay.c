@@ -341,6 +341,23 @@ static void print_event(struct ftrace_task_handle *task,
 		pr_out("user event: %u", evt_id);
 		return;
 	}
+	else if (evt_id >= EVENT_ID_PERF) {
+		const char *event_name;
+
+		switch (evt_id) {
+		case EVENT_ID_PERF_SCHED_IN:
+			event_name = "sched-in";
+			break;
+		case EVENT_ID_PERF_SCHED_OUT:
+			event_name = "sched-out";
+			break;
+		default:
+			event_name = "unknown";
+			break;
+		}
+		pr_out("perf_event: %s", event_name);
+		return;
+	}
 
 	event = pevent_find_event(task->h->kernel.pevent, evt_id);
 	pr_out("[%s:%s] %.*s", event->system, event->name,
