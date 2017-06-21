@@ -1422,7 +1422,7 @@ retry:
 		return -1;
 
 	*taskp = get_task_handle(handle, first_tid);
-	if (*taskp == NULL) {
+	if (*taskp == NULL || (*taskp)->fp == NULL) {
 		/* force re-read on that cpu */
 		kernel->rstack_valid[first_cpu] = false;
 		consume_first_rstack_list(&kernel->rstack_list[first_cpu]);
@@ -1730,6 +1730,7 @@ static int kernel_test_setup_handle(struct uftrace_kernel *kernel,
 
 	for (i = 0; i < NUM_TASK; i++) {
 		handle->tasks[i].tid = test_tids[i];
+		handle->tasks[i].fp  = (void *)1;  /* prevent retry */
 	}
 
 	test_sess.symtabs.kernel_base = 0xffff0000UL;
