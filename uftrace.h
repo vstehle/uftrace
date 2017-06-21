@@ -523,6 +523,7 @@ enum uftrace_event_id {
 	EVENT_ID_PERF		= 100000U,
 	EVENT_ID_PERF_SCHED_IN,
 	EVENT_ID_PERF_SCHED_OUT,
+	EVENT_ID_PERF_SCHED_BOTH,
 
 	/* start of user-defined events */
 	EVENT_ID_USER		= 1000000U,
