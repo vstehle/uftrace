@@ -1323,21 +1323,23 @@ static void fstack_account_time(struct ftrace_task_handle *task)
 
 static void fstack_update_stack_count(struct ftrace_task_handle *task)
 {
-	if (task->rstack == &task->ustack)
+	struct uftrace_record *rstack = task->rstack;
+
+	if (is_user_record(task, rstack))
 		task->ctx = FSTACK_CTX_USER;
 	else
 		task->ctx = FSTACK_CTX_KERNEL;
 
-	if (task->rstack->type == UFTRACE_ENTRY)
+	if (rstack->type == UFTRACE_ENTRY)
 		task->stack_count++;
-	else if (task->rstack->type == UFTRACE_EXIT &&
+	else if (rstack->type == UFTRACE_EXIT &&
 		 task->stack_count > 0)
 		task->stack_count--;
 
 	if (task->ctx == FSTACK_CTX_USER) {
-		if (task->rstack->type == UFTRACE_ENTRY)
+		if (rstack->type == UFTRACE_ENTRY)
 			task->user_stack_count++;
-		else if (task->rstack->type == UFTRACE_EXIT &&
+		else if (rstack->type == UFTRACE_EXIT &&
 			 task->user_stack_count > 0)
 			task->user_stack_count--;
 	}
@@ -1377,7 +1379,7 @@ static void __fstack_consume(struct ftrace_task_handle *task,
 	if (rstack->more) {
 		struct uftrace_rstack_list_node *node;
 
-		if (rstack == &task->ustack)
+		if (is_user_record(task, rstack))
 			node = list_first_entry(&task->rstack_list.read,
 						typeof(*node), list);
 		else
@@ -1393,7 +1395,7 @@ static void __fstack_consume(struct ftrace_task_handle *task,
 		node->args.data = NULL;
 	}
 
-	if (rstack == &task->ustack) {
+	if (is_user_record(task, rstack)) {
 		task->valid = false;
 		if (task->rstack_list.count)
 			consume_first_rstack_list(&task->rstack_list);
@@ -1427,7 +1429,7 @@ void fstack_consume(struct ftrace_file_handle *handle,
 	struct uftrace_kernel *kernel = &handle->kernel;
 	int cpu = 0;
 
-	if (rstack != &task->ustack)
+	if (is_kernel_record(task, rstack))
 		cpu = find_rstack_cpu(kernel, rstack);
 
 	__fstack_consume(task, kernel, cpu);
