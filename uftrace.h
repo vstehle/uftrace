@@ -488,6 +488,9 @@ int read_kernel_stack(struct ftrace_file_handle *handle,
 		      struct ftrace_task_handle **taskp);
 int read_kernel_cpu_data(struct uftrace_kernel *kernel, int cpu);
 void * read_kernel_event(struct uftrace_kernel *kernel, int cpu, int *psize);
+struct uftrace_record * get_kernel_record(struct uftrace_kernel *kernel,
+					  struct ftrace_task_handle *task,
+					  int cpu);
 int finish_kernel_data(struct uftrace_kernel *kernel);
 
 static inline bool has_kernel_data(struct uftrace_kernel *kernel)
