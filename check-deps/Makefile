@@ -3,6 +3,7 @@ CHECK_LIST += cc_has_mfentry
 CHECK_LIST += cxa_demangle
 CHECK_LIST += have_libelf
 CHECK_LIST += cc_has_mno_sse2
+CHECK_LIST += perf_clockid
 
 #
 # This is needed for checking build dependency
