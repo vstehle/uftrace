@@ -7,6 +7,7 @@
 #include <limits.h>
 #include <assert.h>
 #include <byteswap.h>
+#include <glob.h>
 
 #include "uftrace.h"
 #include "utils/utils.h"
@@ -248,6 +249,50 @@ int read_events_file(struct ftrace_file_handle *handle)
 	return 0;
 }
 
+static int setup_perf_data(struct ftrace_file_handle *handle)
+{
+	struct uftrace_perf *perf;
+	glob_t globbuf;
+	char *pattern;
+	size_t i;
+
+	xasprintf(&pattern, "%s/perf-cpu*.dat", handle->dirname);
+	if (glob(pattern, GLOB_ERR, NULL, &globbuf)) {
+		pr_dbg("failed to search perf data file\n");
+		handle->hdr.feat_mask &= ~PERF_EVENT;
+		return -1;
+	}
+
+	perf = xcalloc(globbuf.gl_pathc, sizeof(*perf));
+
+	for (i = 0; i < globbuf.gl_pathc; i++) {
+		perf[i].fp = fopen(globbuf.gl_pathv[i], "r");
+		if (perf[i].fp == NULL)
+			pr_err("open failed: %s", globbuf.gl_pathv[i]);
+	}
+
+	handle->nr_perf = globbuf.gl_pathc;
+	handle->perf = perf;
+
+	globfree(&globbuf);
+	free(pattern);
+	return 0;
+}
+
+static void finish_perf_data(struct ftrace_file_handle *handle)
+{
+	int i;
+
+	if (handle->perf == NULL)
+		return;
+
+	for (i = 0; i < handle->nr_perf; i++)
+		fclose(handle->perf[i].fp);
+
+	free(handle->perf);
+	handle->perf = NULL;
+}
+
 static void snprint_timestamp(char *buf, size_t sz, uint64_t timestamp)
 {
 	snprintf(buf, sz, "%"PRIu64".%09"PRIu64,  // sec.nsec
@@ -411,6 +456,8 @@ retry:
 	handle->sessions.tasks = RB_ROOT;
 	handle->sessions.first = NULL;
 	handle->kernel.pevent = NULL;
+	handle->nr_perf = 0;
+	handle->perf = NULL;
 	INIT_LIST_HEAD(&handle->events);
 
 	if (fread(&handle->hdr, sizeof(handle->hdr), 1, fp) != 1)
@@ -470,6 +517,9 @@ retry:
 	if (handle->hdr.feat_mask & EVENT)
 		read_events_file(handle);
 
+	if (handle->hdr.feat_mask & PERF_EVENT)
+		setup_perf_data(handle);
+
 	ret = 0;
 
 out:
@@ -483,6 +533,9 @@ void close_data_file(struct opts *opts, struct ftrace_file_handle *handle)
 
 	if (has_kernel_data(&handle->kernel))
 		finish_kernel_data(&handle->kernel);
+
+	if (has_perf_data(handle))
+		finish_perf_data(handle);
 
 	clear_ftrace_info(&handle->info);
 	reset_task_handle(handle);
