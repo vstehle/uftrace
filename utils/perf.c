@@ -16,13 +16,14 @@ static bool use_perf = true;
 static bool use_perf = false;
 #endif
 
-static int open_perf_event(int pid, int cpu)
+static int __maybe_unused
+open_perf_sw_event(int pid, int cpu, uint64_t config, uint64_t control)
 {
 	/* use dummy events to get scheduling info (Linux v4.3 or later) */
 	struct perf_event_attr attr = {
 		.size			= sizeof(attr),
 		.type			= PERF_TYPE_SOFTWARE,
-		.config			= PERF_COUNT_SW_DUMMY,
+		.config			= config,
 		.sample_type		= PERF_SAMPLE_TIME | PERF_SAMPLE_TID,
 		.sample_period		= 1,
 		.sample_id_all		= 1,
@@ -40,12 +41,31 @@ static int open_perf_event(int pid, int cpu)
 	unsigned long flag = PERF_FLAG_FD_NO_GROUP;
 	int fd;
 
+#ifdef HAVE_PERF_CTXSW
+	if (control & PERF_CTRL_CTXSW)
+		attr.context_switch = 1;
+#endif
+
 	fd = syscall(SYS_perf_event_open, &attr, pid, cpu, -1, flag);
 	if (fd < 0)
 		pr_dbg("perf event open failed: %m\n");
 
 	return fd;
 }
+
+#ifdef HAVE_PERF_CTXSW
+static int open_perf_sched_event(int pid, int cpu)
+{
+	return open_perf_sw_event(pid, cpu, PERF_COUNT_SW_DUMMY, PERF_CTRL_CTXSW);
+}
+#else
+static int open_perf_sched_event(int pid, int cpu)
+{
+	/* Operation not supported */
+	errno = ENOTSUP;
+	return -1;
+}
+#endif
 
 int setup_perf_record(struct uftrace_perf_info *upi, int nr_cpu, int cpus[],
 		      int pid, const char *dirname)
@@ -65,7 +85,7 @@ int setup_perf_record(struct uftrace_perf_info *upi, int nr_cpu, int cpus[],
 	memset(upi->event_fd, -1, nr_cpu * sizeof(fd));
 
 	for (i = 0; i < nr_cpu; i++) {
-		fd = open_perf_event(pid, cpus[i]);
+		fd = open_perf_sched_event(pid, cpus[i]);
 		if (fd < 0) {
 			pr_dbg("failed to open perf event: %m\n");
 			use_perf = false;

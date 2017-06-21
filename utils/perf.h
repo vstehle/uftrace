@@ -14,6 +14,8 @@ struct uftrace_perf_info {
 	int			nr_event;
 };
 
+#define PERF_CTRL_CTXSW		0x1ULL
+
 int setup_perf_record(struct uftrace_perf_info *upi, int nr_cpu, int cpus[],
 		      int pid, const char *dirname);
 void finish_perf_record(struct uftrace_perf_info *upi);

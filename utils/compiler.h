@@ -26,5 +26,6 @@
 
 #define __weak  __attribute__((weak))
 #define __visible_default  __attribute__((visibility("default")))
+#define __maybe_unused  __attribute__((unused))
 
 #endif /* __FTRACE_COMPILER_H__ */
