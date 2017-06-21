@@ -792,6 +792,7 @@ lost:
 	}
 	else if (rstack->type == UFTRACE_EVENT) {
 		int depth;
+		struct fstack *fstack;
 
 		depth = task->display_depth;
 
@@ -804,7 +805,14 @@ lost:
 		if (opts->task_newline)
 			print_task_newline(task->tid);
 
-		print_field(task, NULL, NO_TIME);
+		/* function exit */
+		fstack = &task->func_stack[task->stack_count];
+
+		if (rstack->addr == EVENT_ID_PERF_SCHED_IN &&
+		    fstack->total_time)
+			print_field(task, fstack, NULL);
+		else
+			print_field(task, NULL, NO_TIME);
 
 		pr_out(" %*s/* ", depth * 2, "");
 		print_event(task, rstack);
