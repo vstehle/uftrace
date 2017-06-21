@@ -1400,12 +1400,19 @@ static void __fstack_consume(struct ftrace_task_handle *task,
 		if (task->rstack_list.count)
 			consume_first_rstack_list(&task->rstack_list);
 	}
-	else if (rstack->type == UFTRACE_LOST)
-		kernel->missed_events[cpu] = 0;
-	else {
+	else if (is_kernel_record(task, rstack)) {
 		kernel->rstack_valid[cpu] = false;
 		if (kernel->rstack_list[cpu].count)
 			consume_first_rstack_list(&kernel->rstack_list[cpu]);
+	}
+	else if (rstack->type == UFTRACE_LOST) {
+		kernel->missed_events[cpu] = 0;
+	}
+	else {  /* must be perf event */
+		assert(handle->last_perf_idx >= 0);
+
+		handle->perf[handle->last_perf_idx].valid= false;
+		handle->last_perf_idx = -1;
 	}
 
 	update_first_timestamp(handle, rstack);
@@ -1439,13 +1446,21 @@ static int __read_rstack(struct ftrace_file_handle *handle,
 			 struct ftrace_task_handle **taskp,
 			 bool consume)
 {
-	int u, k = -1;
+	int u, k = -1, p = -1;
 	struct ftrace_task_handle *task = NULL;
 	struct ftrace_task_handle *utask = NULL;
 	struct ftrace_task_handle *ktask = NULL;
 	struct uftrace_kernel *kernel = &handle->kernel;
+	struct uftrace_perf *perf;
+	uint64_t min_timestamp = ~0ULL;
+	enum { NONE, USER, KERNEL, PERF } source = NONE;
 
 	u = read_user_stack(handle, &utask);
+	if (u >= 0) {
+		min_timestamp = utask->ustack.time;
+		source = USER;
+	}
+
 	if (has_kernel_data(kernel)) {
 retry:
 		k = read_kernel_stack(handle, &ktask);
@@ -1463,23 +1478,39 @@ retry:
 			__fstack_consume(ktask, kernel, k);
 			goto retry;
 		}
+		else if (ktask->kstack.time < min_timestamp) {
+			min_timestamp = ktask->kstack.time;
+			source = KERNEL;
+		}
 	}
 
-	if (u < 0 && k < 0)
+	if (has_perf_data(handle)) {
+		p = read_perf_data(handle);
+		perf = &handle->perf[p];
+
+		if (p < 0) {
+			static bool warn = false;
+
+			if (!warn && consume) {
+				pr_dbg("no more perf data\n");
+				warn = true;
+			}
+		}
+		else if (perf->ctxsw.time < min_timestamp) {
+			min_timestamp = perf->ctxsw.time;
+			source = PERF;
+		}
+	}
+
+	if (source == NONE)
 		return -1;
 
-	if (k < 0)
-		goto user;
-	if (u < 0)
-		goto kernel;
-
-	if (utask->ustack.time < ktask->kstack.time) {
-user:
+	switch (source) {
+	case USER:
 		utask->rstack = &utask->ustack;
 		task = utask;
-	}
-	else {
-kernel:
+		break;
+	case KERNEL:
 		ktask->rstack = &ktask->kstack;
 		task = ktask;
 
@@ -1501,6 +1532,16 @@ kernel:
 			 */
 			task->rstack = &lost_rstack;
 		}
+		break;
+
+	case PERF:
+		task = get_task_handle(handle, perf->ctxsw.tid);
+		task->rstack = get_perf_record(perf);
+		break;
+
+	case NONE:
+	default:
+		return -1;
 	}
 
 	/* update stack count when the rstack is actually used */
