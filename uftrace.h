@@ -120,6 +120,7 @@ struct pevent;
 struct uftrace_record;
 struct uftrace_rstack_list;
 struct uftrace_session;
+struct uftrace_ctxsw;
 
 struct uftrace_session_link {
 	struct rb_root		root;
@@ -153,16 +154,25 @@ struct uftrace_kernel {
 	struct list_head nopatch;
 };
 
+struct uftrace_perf {
+	FILE			*fp;
+	bool			valid;
+	bool			done;
+};
+
 struct ftrace_file_handle {
 	FILE *fp;
 	int sock;
 	const char *dirname;
 	struct uftrace_file_header hdr;
 	struct uftrace_info info;
+	struct uftrace_perf *perf;
 	struct uftrace_kernel kernel;
 	struct ftrace_task_handle *tasks;
 	struct uftrace_session_link sessions;
 	int nr_tasks;
+	int nr_perf;
+	int last_perf_idx;
 	int depth;
 	bool needs_byte_swap;
 	bool needs_bit_swap;
@@ -483,6 +493,11 @@ static inline bool has_kernel_data(struct uftrace_kernel *kernel)
 	return kernel->pevent != NULL;
 }
 
+static inline bool has_perf_data(struct ftrace_file_handle *handle)
+{
+	return handle->perf != NULL;
+}
+
 bool check_kernel_pid_filter(void);
 
 struct rusage;
@@ -495,13 +510,24 @@ void clear_ftrace_info(struct uftrace_info *info);
 int arch_fill_cpuinfo_model(int fd);
 int arch_register_index(char *reg_name);
 
-#define EVENT_ID_USER  1000000U
+enum uftrace_event_id {
+	/* kernel event id is in the tracefs format file */
+	EVENT_ID_KERNEL		= 0U,
+
+	/* supported perf events */
+	EVENT_ID_PERF		= 100000U,
+	EVENT_ID_PERF_SCHED_IN,
+	EVENT_ID_PERF_SCHED_OUT,
+
+	/* start of user-defined events */
+	EVENT_ID_USER		= 1000000U,
+};
 
 struct uftrace_event {
-	struct list_head list;
-	unsigned id;
-	char *provider;
-	char *event;
+	struct list_head	list;
+	enum uftrace_event_id	id;
+	char			*provider;
+	char			*event;
 };
 
 #endif /* __UFTRACE_H__ */
