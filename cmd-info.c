@@ -21,6 +21,10 @@
 #include "libmcount/mcount.h"
 #include "utils/utils.h"
 
+#ifndef NT_GNU_BUILD_ID
+#define NT_GNU_BUILD_ID 3
+#endif
+
 #define BUILD_ID_SIZE 20
 #define BUILD_ID_STR_SIZE (BUILD_ID_SIZE * 2 + 1)
 
